@@ -10,14 +10,14 @@ load_dotenv(PROJECT_ROOT / ".env")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 
 # Model Configuration
-LLM_MODEL = "claude-haiku-3-5-20241022"
+LLM_MODEL = "claude-haiku-4-5-20251001"
 PROMPT_VERSION = "v1"
 
-# Pricing per token (USD) - Claude Haiku 3.5 as of 2024
+# Pricing per token (USD)
 PRICING = {
-    "claude-haiku-3-5-20241022": {
-        "input": 0.80 / 1_000_000,   # $0.80 per 1M input tokens
-        "output": 4.00 / 1_000_000,  # $4.00 per 1M output tokens
+    "claude-haiku-4-5-20251001": {
+        "input": 1.00 / 1_000_000,   # $1.00 per 1M input tokens
+        "output": 5.00 / 1_000_000,  # $5.00 per 1M output tokens
     },
 }
 

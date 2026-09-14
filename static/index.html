@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HN Story Summarizer</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+            color: #333;
+        }
+        h1 { margin-bottom: 10px; }
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .tab {
+            padding: 10px 20px;
+            background: #ddd;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .tab.active { background: #007bff; color: white; }
+        .filters {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .filters select, .filters input {
+            padding: 8px 12px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .card h3 {
+            margin: 0 0 10px 0;
+            font-size: 16px;
+        }
+        .card h3 a { color: #007bff; text-decoration: none; }
+        .card h3 a:hover { text-decoration: underline; }
+        .meta {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 10px;
+        }
+        .summary {
+            font-size: 14px;
+            line-height: 1.5;
+            margin-bottom: 10px;
+        }
+        .tags { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 8px; }
+        .tag {
+            background: #e0e0e0;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        .tag:hover { background: #007bff; color: white; }
+        .audience {
+            font-size: 13px;
+            color: #555;
+            font-style: italic;
+        }
+        .status {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        .status.done { background: #d4edda; color: #155724; }
+        .status.pending { background: #fff3cd; color: #856404; }
+        .status.processing { background: #cce5ff; color: #004085; }
+        .status.failed { background: #f8d7da; color: #721c24; }
+        .run-card {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .run-info { flex: 1; }
+        .run-cost {
+            font-size: 20px;
+            font-weight: bold;
+            color: #28a745;
+        }
+        .run-details { margin-top: 10px; font-size: 13px; color: #666; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        th, td {
+            padding: 8px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        th { background: #f8f9fa; }
+        .total-row { font-weight: bold; background: #e9ecef; }
+        .empty { text-align: center; color: #666; padding: 40px; }
+        #loading { text-align: center; padding: 40px; color: #666; }
+    </style>
+</head>
+<body>
+    <h1>HN Story Summarizer</h1>
+    <p>Browse AI-summarized Hacker News stories and view pipeline costs.</p>
+
+    <div class="tabs">
+        <button class="tab active" data-tab="stories">Stories</button>
+        <button class="tab" data-tab="runs">Pipeline Runs</button>
+    </div>
+
+    <div id="stories-view">
+        <div class="filters">
+            <select id="status-filter">
+                <option value="">All Statuses</option>
+                <option value="done">Done</option>
+                <option value="pending">Pending</option>
+                <option value="processing">Processing</option>
+                <option value="failed">Failed</option>
+            </select>
+            <input type="text" id="tag-filter" placeholder="Filter by tag...">
+            <select id="tag-select">
+                <option value="">Select tag...</option>
+            </select>
+        </div>
+        <div id="stories-list"></div>
+    </div>
+
+    <div id="runs-view" style="display: none;">
+        <div id="runs-list"></div>
+        <div id="run-detail" style="display: none;"></div>
+    </div>
+
+    <script>
+        // State
+        let currentTab = 'stories';
+
+        // Tab switching
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                currentTab = tab.dataset.tab;
+                document.getElementById('stories-view').style.display = currentTab === 'stories' ? 'block' : 'none';
+                document.getElementById('runs-view').style.display = currentTab === 'runs' ? 'block' : 'none';
+                if (currentTab === 'runs') loadRuns();
+            });
+        });
+
+        // Load stories
+        async function loadStories() {
+            const status = document.getElementById('status-filter').value;
+            const tag = document.getElementById('tag-filter').value;
+            const params = new URLSearchParams();
+            if (status) params.set('status', status);
+            if (tag) params.set('tag', tag);
+
+            const container = document.getElementById('stories-list');
+            container.innerHTML = '<div id="loading">Loading...</div>';
+
+            try {
+                const res = await fetch(`/api/stories?${params}`);
+                const data = await res.json();
+
+                if (data.stories.length === 0) {
+                    container.innerHTML = '<div class="empty">No stories found.</div>';
+                    return;
+                }
+
+                container.innerHTML = data.stories.map(story => `
+                    <div class="card">
+                        <h3>
+                            ${story.url ? `<a href="${story.url}" target="_blank">${escapeHtml(story.title)}</a>` : escapeHtml(story.title)}
+                        </h3>
+                        <div class="meta">
+                            <span class="status ${story.status}">${story.status}</span>
+                            by ${escapeHtml(story.author || 'unknown')} |
+                            ${story.points || 0} points |
+                            ${story.num_comments || 0} comments
+                        </div>
+                        ${story.summary ? `<div class="summary">${escapeHtml(story.summary)}</div>` : ''}
+                        ${story.tags && story.tags.length ? `
+                            <div class="tags">
+                                ${story.tags.map(t => `<span class="tag" onclick="filterByTag('${escapeHtml(t)}')">${escapeHtml(t)}</span>`).join('')}
+                            </div>
+                        ` : ''}
+                        ${story.audience ? `<div class="audience">${escapeHtml(story.audience)}</div>` : ''}
+                    </div>
+                `).join('');
+            } catch (err) {
+                container.innerHTML = `<div class="empty">Error loading stories: ${err.message}</div>`;
+            }
+        }
+
+        // Load tags for dropdown
+        async function loadTags() {
+            try {
+                const res = await fetch('/api/tags');
+                const data = await res.json();
+                const select = document.getElementById('tag-select');
+                select.innerHTML = '<option value="">Select tag...</option>' +
+                    data.tags.map(t => `<option value="${escapeHtml(t.name)}">${escapeHtml(t.name)} (${t.count})</option>`).join('');
+            } catch (err) {
+                console.error('Error loading tags:', err);
+            }
+        }
+
+        // Load runs
+        async function loadRuns() {
+            const container = document.getElementById('runs-list');
+            container.innerHTML = '<div id="loading">Loading...</div>';
+            document.getElementById('run-detail').style.display = 'none';
+
+            try {
+                const res = await fetch('/api/runs');
+                const data = await res.json();
+
+                if (data.runs.length === 0) {
+                    container.innerHTML = '<div class="empty">No pipeline runs yet.</div>';
+                    return;
+                }
+
+                container.innerHTML = data.runs.map(run => `
+                    <div class="card run-card" onclick="loadRunDetail(${run.id})" style="cursor: pointer;">
+                        <div class="run-info">
+                            <h3>Run #${run.id}</h3>
+                            <div class="run-details">
+                                Started: ${run.started_at}<br>
+                                ${run.finished_at ? `Finished: ${run.finished_at}<br>` : '<em>In progress...</em><br>'}
+                                Processed: ${run.stories_processed} stories | LLM calls: ${run.llm_calls}
+                            </div>
+                        </div>
+                        <div class="run-cost">$${run.total_cost.toFixed(6)}</div>
+                    </div>
+                `).join('');
+            } catch (err) {
+                container.innerHTML = `<div class="empty">Error loading runs: ${err.message}</div>`;
+            }
+        }
+
+        // Load run detail
+        async function loadRunDetail(runId) {
+            const container = document.getElementById('run-detail');
+            container.style.display = 'block';
+            container.innerHTML = '<div id="loading">Loading...</div>';
+
+            try {
+                const res = await fetch(`/api/runs/${runId}`);
+                const data = await res.json();
+
+                container.innerHTML = `
+                    <div class="card">
+                        <h3>Run #${data.run.id} - Cost Breakdown</h3>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Story</th>
+                                    <th>Input Tokens</th>
+                                    <th>Output Tokens</th>
+                                    <th>Cost (USD)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${data.llm_calls.map(call => `
+                                    <tr>
+                                        <td>${escapeHtml(call.story_title.substring(0, 50))}...</td>
+                                        <td>${call.input_tokens}</td>
+                                        <td>${call.output_tokens}</td>
+                                        <td>$${call.cost_usd.toFixed(6)}</td>
+                                    </tr>
+                                `).join('')}
+                                <tr class="total-row">
+                                    <td>TOTAL</td>
+                                    <td>${data.totals.input_tokens}</td>
+                                    <td>${data.totals.output_tokens}</td>
+                                    <td>$${data.totals.cost_usd.toFixed(6)}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            } catch (err) {
+                container.innerHTML = `<div class="empty">Error loading run detail: ${err.message}</div>`;
+            }
+        }
+
+        function filterByTag(tag) {
+            document.getElementById('tag-filter').value = tag;
+            loadStories();
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Event listeners
+        document.getElementById('status-filter').addEventListener('change', loadStories);
+        document.getElementById('tag-filter').addEventListener('input', debounce(loadStories, 300));
+        document.getElementById('tag-select').addEventListener('change', (e) => {
+            if (e.target.value) {
+                document.getElementById('tag-filter').value = e.target.value;
+                loadStories();
+            }
+        });
+
+        function debounce(fn, delay) {
+            let timeout;
+            return function(...args) {
+                clearTimeout(timeout);
+                timeout = setTimeout(() => fn.apply(this, args), delay);
+            };
+        }
+
+        // Initial load
+        loadStories();
+        loadTags();
+    </script>
+</body>
+</html>

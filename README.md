@@ -8,16 +8,15 @@ A pipeline that fetches Hacker News stories, generates AI summaries using Claude
 cp .env.example .env        # Create config file
 # Edit .env and add your ANTHROPIC_API_KEY
 ./run.sh                    # Fetch, process, and serve
-# Open http://localhost:8000
 ```
 
 ## Stack
 
-- **Python 3** — no external runtime dependencies
-- **FastAPI + Uvicorn** — async web server, no build step
-- **SQLite** — single-file database, zero setup
+- **Python 3** 
+- **FastAPI + Uvicorn** 
+- **SQLite** 
 - **Anthropic SDK** — Claude API (claude-haiku-4-5-20251001)
-- **Vanilla HTML/JS** — no frontend build tooling
+- **HTML/JS** 
 
 ## Design Choices
 
@@ -31,10 +30,7 @@ cp .env.example .env        # Create config file
 
 ## One Thing I'd Do Differently
 
-There's a narrow gap in crash-safety: the LLM API call happens outside any DB transaction, so if the process is hard-killed in the window between the API responding and the result being committed, that call is billed but never logged — so a resume would call the LLM again for the same story, paying twice with only one row to show for it.
-
-The fix should be structural: add a `status` column to `llm_runs` (`attempted` → `completed`) [schema change] and commit an `attempted` row *before* making the API call, not after [code patch]. On resume, a story with an unresolved `attempted` row can't be safely auto-retried, since there's no way to know locally whether the prior call actually succeeded — so it would need to be flagged for manual review (or reconciled against Anthropic's own usage dashboard) rather than silently retried, since guessing wrong either double-bills or drops a paid-for result.
-
+There's a narrow gap in crash-safety: the LLM API call happens outside any DB transaction, so if the process is hard-killed in the window between the API responding and the result being committed, that call is billed but never logged so a resume would call the LLM again for the same story, paying twice with only one row to show for it. The fix should be structural: add a `status` column to `llm_runs` (`attempted` → `completed`) [schema change] and commit an `attempted` row *before* making the API call, not after [code patch]. On resume, a story with an unresolved `attempted` row can't be safely auto-retried, since there's no way to know locally whether the prior call actually succeeded so it would need to be flagged for manual review (or reconciled against Anthropic's own usage dashboard) rather than silently retried, since guessing wrong either double-bills or drops a paid-for result.
 ## Project Structure
 
 ```

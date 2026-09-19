@@ -1,6 +1,6 @@
 # HN Story Summarizer
 
-A pipeline that fetches Hacker News stories, generates AI summaries using Claude, stores everything in SQLite, and serves a browsable web UI with cost tracking per run.
+A pipeline that fetches Hacker News stories, generates AI summaries using Claude, stores everything in SQLite and serves a browsable web UI with cost tracking per run.
 
 ## Quick Start
 
@@ -20,9 +20,9 @@ cp .env.example .env        # Create config file
 
 ## Design Choices
 
-**SQLite** — single file, no server to run or manage, trivially portable and inspectable via CLI. At this scale (hundreds to low-thousands of rows) it has no real downside versus Postgres, and the schema/queries aren't SQLite-specific, so migrating later would be straightforward if scale or concurrent writers demanded it.
+**SQLite** — single file, no server to run or manage, trivially portable and inspectable via CLI. At this scale (hundreds to low-thousands of rows) it has no real downside versus Postgres and the schema/queries aren't SQLite-specific, so migrating later would be straightforward if scale or concurrent writers demanded it.
 
-**Status machine (`stories.status`: pending → processing → done/failed)** — this is what makes crash recovery possible at all. Without persisted per-item state, a restarted process can't tell what it already finished — it would either redo everything (re-billing) or silently skip things. The `processing` state in particular is what lets a restart distinguish "never started" from "was interrupted mid-flight."
+**Status machine (`stories.status`: pending → processing → done/failed)** — this is what makes crash recovery possible at all. Without persisted per-item state, a restarted process can't tell what it already finished. The `processing` state in particular is what lets a restart distinguish "never started" from "was interrupted mid-flight."
 
 **Prompt versioning** — LLM output is a function of (story, prompt, model), not just the story. Versioning the prompt lets me improve it later and reprocess only stories below the current version, without re-billing stories already processed under it. Known limitation: only prompt text bumps the version today — swapping models alone won't trigger reprocessing, even though the model is logged per-row for audit.
 
@@ -38,12 +38,12 @@ There's a narrow gap in crash-safety: the LLM API call happens outside any DB tr
 ├── .env.example        # Config template
 ├── src/
 │   ├── config.py       # Settings, model pricing
-│   ├── db.py           # Schema, connection helpers
-│   ├── ingest.py       # Fetch from HN Algolia API
+│   ├── db.py           # Schema for db
+│   ├── ingest.py       # Fetch from HN API
 │   ├── process.py      # LLM calls, status machine, cost logging
 │   └── server.py       # FastAPI endpoints
 ├── static/
-│   └── index.html      # Web UI (vanilla JS)
+│   └── index.html      # Web UI
 └── scripts/
     ├── check_secrets.sh              # Audit git history for leaked keys
     └── migrate_fix_haiku_pricing.py  # One-off cost recalculation
